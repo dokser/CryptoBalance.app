@@ -2,22 +2,36 @@ import streamlit as st
 import requests
 import datetime
 from fpdf import FPDF
-import io
+import cv2
+import numpy as np
 
 # --- Configuration ---
 st.set_page_config(page_title="CryptoBalance Forensic", page_icon="🕵️‍♂️", layout="centered")
 
-# --- Custom CSS for Hebrew Support (RTL) & UI Tweaks ---
-st.markdown("""
-    <style>
-    .stTextInput > label {font-size:110%; font-weight:bold;}
-    .stSelectbox > label {font-size:110%; font-weight:bold;}
-    /* Simple RTL alignment */
-    .element-container {direction: ltr;} 
-    </style>
-    """, unsafe_allow_html=True)
+# --- Initialize Session State for Address ---
+if 'wallet_address' not in st.session_state:
+    st.session_state.wallet_address = ""
 
-# --- Logic Functions (Robust & Anti-Blocking) ---
+# --- Helper Functions ---
+def clear_text():
+    st.session_state.wallet_address = ""
+
+def decode_qr(image_buffer):
+    try:
+        # Convert the file to an opencv image.
+        file_bytes = np.asarray(bytearray(image_buffer.read()), dtype=np.uint8)
+        opencv_image = cv2.imdecode(file_bytes, 1)
+        
+        # Initialize the QRCode detector
+        detector = cv2.QRCodeDetector()
+        data, bbox, _ = detector.detectAndDecode(opencv_image)
+        
+        if data:
+            return data
+        return None
+    except Exception as e:
+        return None
+
 def get_headers():
     return {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -44,14 +58,9 @@ def get_balance(coin_str, address):
         
     elif 'Ethereum' in coin_str:
         if not address.startswith('0x') or len(address) != 42:
-             return -1 # Invalid format indicator
+             return -1 
 
-        # Multi-node fallback
-        nodes = [
-            "https://eth.llamarpc.com",
-            "https://rpc.ankr.com/eth",
-            "https://cloudflare-eth.com"
-        ]
+        nodes = ["https://eth.llamarpc.com", "https://rpc.ankr.com/eth", "https://cloudflare-eth.com"]
         payload = {"jsonrpc": "2.0", "method": "eth_getBalance", "params": [address, "latest"], "id": 1}
         
         for node in nodes:
@@ -61,7 +70,7 @@ def get_balance(coin_str, address):
                 if 'result' in data:
                     return int(data['result'], 16) / 10**18
             except: continue
-        return None # Failed
+        return None
 
     elif 'Tron' in coin_str:
         url = f"https://apilist.tronscan.org/api/account?address={address}"
@@ -100,55 +109,66 @@ def create_pdf(data, user_info):
     pdf.set_fill_color(240, 240, 240)
     pdf.cell(190, 10, " Scan Results", ln=1, fill=True)
     pdf.ln(2)
-    
     pdf.cell(190, 8, f"Time: {data['time']}", ln=1)
     pdf.cell(190, 8, f"Coin: {data['coin']}", ln=1)
     pdf.cell(190, 8, f"Address: {data['address']}", ln=1)
     pdf.ln(5)
-    
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(190, 10, f"Total Value: ${data['total_usd']:,.2f}", ln=1)
-    
-    # Return as bytes for download
     return pdf.output(dest='S').encode('latin-1')
 
-# --- UI Structure ---
+# --- UI Layout ---
 st.title("🕵️‍♂️ CryptoBalance Scanner")
-st.markdown("### Forensic Blockchain Tool")
 
-# Sidebar for Login (Optional)
+# 1. Sidebar for Investigator Details
 with st.sidebar:
-    st.header("Investigator Details")
-    st.markdown("*(Optional - Leave empty to skip)*")
+    st.header("📋 Investigator Details")
+    st.caption("Optional - For Report Only")
     
     input_name = st.text_input("Full Name")
     input_id = st.text_input("ID Number")
     input_unit = st.text_input("Unit")
     
-    # Logic: If empty, use defaults
     full_name = input_name if input_name.strip() else "Guest"
     id_number = input_id if input_id.strip() else "N/A"
     unit = input_unit if input_unit.strip() else "N/A"
 
     if input_name:
-        st.success(f"Active: {full_name}")
-    else:
-        st.info("Running as Guest")
+        st.success(f"User: {full_name}")
 
-# Main Scanner Area
-col1, col2 = st.columns([3, 1])
-with col1:
-    coin_type = st.selectbox("Select Cryptocurrency", 
-        ['Bitcoin (BTC)', 'Ethereum (ETH)', 'Tron (TRX)', 'Litecoin (LTC)', 'Dogecoin (DOGE)'])
+# 2. Coin Selection
+coin_type = st.selectbox("Select Cryptocurrency", 
+    ['Bitcoin (BTC)', 'Ethereum (ETH)', 'Tron (TRX)', 'Litecoin (LTC)', 'Dogecoin (DOGE)'])
 
-address = st.text_input("Wallet Address (Paste here)")
+# 3. QR Camera Input (Expandable)
+with st.expander("📷 Scan QR Code (Click to Open Camera)"):
+    img_file_buffer = st.camera_input("Take a picture of the QR Code")
+    if img_file_buffer is not None:
+        # Detect QR
+        qr_data = decode_qr(img_file_buffer)
+        if qr_data:
+            st.session_state.wallet_address = qr_data
+            st.success(f"QR Detected: {qr_data}")
+        else:
+            st.warning("No QR code detected in the image. Try getting closer.")
 
-if st.button("🔎 Scan Blockchain", type="primary"):
+# 4. Wallet Address Input + Clear Button
+col_input, col_clear = st.columns([5, 1])
+with col_input:
+    address = st.text_input("Wallet Address", key="wallet_address")
+with col_clear:
+    st.write("") # Spacer
+    st.write("") # Spacer
+    if st.button("❌", help="Clear Address"):
+        clear_text()
+        st.experimental_rerun()
+
+# 5. Scan Action
+if st.button("🔎 Scan Blockchain", type="primary", use_container_width=True):
     if not address:
         st.error("Please enter a wallet address.")
     else:
         with st.spinner('Connecting to Blockchain Nodes...'):
-            # Run Logic
             price = get_price(coin_type)
             balance = get_balance(coin_type, address.strip())
             
@@ -159,13 +179,11 @@ if st.button("🔎 Scan Blockchain", type="primary"):
             else:
                 total_usd = balance * price
                 
-                # Display Results
                 st.markdown("---")
                 c1, c2 = st.columns(2)
                 c1.metric("Balance", f"{balance:.8f}", coin_type.split('(')[1][:-1])
                 c2.metric("Value (USD)", f"${total_usd:,.2f}")
                 
-                # Prepare Data for Report
                 scan_data = {
                     "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "coin": coin_type,
@@ -173,15 +191,14 @@ if st.button("🔎 Scan Blockchain", type="primary"):
                     "total_usd": total_usd
                 }
                 
-                # Generate PDF (Always available now)
                 pdf_bytes = create_pdf(scan_data, {"name": full_name, "id": id_number, "unit": unit})
                 
                 st.download_button(
                     label="📄 Download PDF Report",
                     data=pdf_bytes,
                     file_name=f"Report_{datetime.datetime.now().strftime('%H%M')}.pdf",
-                    mime="application/pdf"
+                    mime="application/pdf",
+                    use_container_width=True
                 )
 
-st.markdown("---")
-st.caption("Secure Forensic Tool | Runs on Cloud | No Logs Saved")
+st.caption("v4.0 | Secure Cloud Forensic Tool")
