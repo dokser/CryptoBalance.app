@@ -15,18 +15,15 @@ if 'wallet_address' not in st.session_state:
 
 # --- Helper Functions ---
 def clear_text():
+    # This function is called when the X button is clicked
     st.session_state.wallet_address = ""
 
 def decode_qr(image_buffer):
     try:
-        # Convert the file/buffer to an opencv image
         file_bytes = np.asarray(bytearray(image_buffer.read()), dtype=np.uint8)
         opencv_image = cv2.imdecode(file_bytes, 1)
-        
-        # Initialize the QRCode detector
         detector = cv2.QRCodeDetector()
         data, bbox, _ = detector.detectAndDecode(opencv_image)
-        
         if data:
             return data
         return None
@@ -140,12 +137,12 @@ with st.sidebar:
 coin_type = st.selectbox("Select Cryptocurrency", 
     ['Bitcoin (BTC)', 'Ethereum (ETH)', 'Tron (TRX)', 'Litecoin (LTC)', 'Dogecoin (DOGE)'])
 
-# 3. QR Options (Tabs for cleaner UI)
+# 3. QR Options
 st.write("---")
 st.subheader("📷 Address Input Options")
 tab1, tab2 = st.tabs(["📤 Upload Image", "🎥 Live Camera"])
 
-# Option A: Upload File (Easier & No Permissions needed)
+# Option A: Upload File
 with tab1:
     uploaded_file = st.file_uploader("Upload QR Code Image", type=['png', 'jpg', 'jpeg'])
     if uploaded_file is not None:
@@ -156,7 +153,7 @@ with tab1:
         else:
             st.error("Could not read QR code from image.")
 
-# Option B: Live Camera (Requires Permission)
+# Option B: Live Camera
 with tab2:
     st.caption("Requires browser camera permission")
     camera_image = st.camera_input("Scan QR")
@@ -166,16 +163,16 @@ with tab2:
             st.session_state.wallet_address = qr_data
             st.success(f"QR Decoded from Camera: {qr_data}")
 
-# 4. Wallet Address Input + Clear
+# 4. Wallet Address Input + Clear (THE FIX IS HERE)
 col_input, col_clear = st.columns([5, 1])
 with col_input:
+    # Notice we bind the input to 'wallet_address' in session state
     address = st.text_input("Wallet Address", key="wallet_address")
 with col_clear:
     st.write("") 
     st.write("") 
-    if st.button("❌", help="Clear Address"):
-        clear_text()
-        st.experimental_rerun()
+    # FIX: Using on_click callback instead of imperative logic
+    st.button("❌", help="Clear Address", on_click=clear_text)
 
 # 5. Scan Action
 if st.button("🔎 Scan Blockchain", type="primary", use_container_width=True):
@@ -215,4 +212,4 @@ if st.button("🔎 Scan Blockchain", type="primary", use_container_width=True):
                     use_container_width=True
                 )
 
-st.caption("v4.1 | Secure Cloud Forensic Tool")
+st.caption("v4.2 | Secure Cloud Forensic Tool")
