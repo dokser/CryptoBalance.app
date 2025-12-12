@@ -4,11 +4,12 @@ import datetime
 from fpdf import FPDF
 import cv2
 import numpy as np
+from PIL import Image
 
 # --- Configuration ---
 st.set_page_config(page_title="CryptoBalance Forensic", page_icon="🕵️‍♂️", layout="centered")
 
-# --- Initialize Session State for Address ---
+# --- Initialize Session State ---
 if 'wallet_address' not in st.session_state:
     st.session_state.wallet_address = ""
 
@@ -18,7 +19,7 @@ def clear_text():
 
 def decode_qr(image_buffer):
     try:
-        # Convert the file to an opencv image.
+        # Convert the file/buffer to an opencv image
         file_bytes = np.asarray(bytearray(image_buffer.read()), dtype=np.uint8)
         opencv_image = cv2.imdecode(file_bytes, 1)
         
@@ -120,11 +121,10 @@ def create_pdf(data, user_info):
 # --- UI Layout ---
 st.title("🕵️‍♂️ CryptoBalance Scanner")
 
-# 1. Sidebar for Investigator Details
+# 1. Sidebar
 with st.sidebar:
     st.header("📋 Investigator Details")
     st.caption("Optional - For Report Only")
-    
     input_name = st.text_input("Full Name")
     input_id = st.text_input("ID Number")
     input_unit = st.text_input("Unit")
@@ -140,25 +140,39 @@ with st.sidebar:
 coin_type = st.selectbox("Select Cryptocurrency", 
     ['Bitcoin (BTC)', 'Ethereum (ETH)', 'Tron (TRX)', 'Litecoin (LTC)', 'Dogecoin (DOGE)'])
 
-# 3. QR Camera Input (Expandable)
-with st.expander("📷 Scan QR Code (Click to Open Camera)"):
-    img_file_buffer = st.camera_input("Take a picture of the QR Code")
-    if img_file_buffer is not None:
-        # Detect QR
-        qr_data = decode_qr(img_file_buffer)
+# 3. QR Options (Tabs for cleaner UI)
+st.write("---")
+st.subheader("📷 Address Input Options")
+tab1, tab2 = st.tabs(["📤 Upload Image", "🎥 Live Camera"])
+
+# Option A: Upload File (Easier & No Permissions needed)
+with tab1:
+    uploaded_file = st.file_uploader("Upload QR Code Image", type=['png', 'jpg', 'jpeg'])
+    if uploaded_file is not None:
+        qr_data = decode_qr(uploaded_file)
         if qr_data:
             st.session_state.wallet_address = qr_data
-            st.success(f"QR Detected: {qr_data}")
+            st.success(f"QR Decoded from File: {qr_data}")
         else:
-            st.warning("No QR code detected in the image. Try getting closer.")
+            st.error("Could not read QR code from image.")
 
-# 4. Wallet Address Input + Clear Button
+# Option B: Live Camera (Requires Permission)
+with tab2:
+    st.caption("Requires browser camera permission")
+    camera_image = st.camera_input("Scan QR")
+    if camera_image is not None:
+        qr_data = decode_qr(camera_image)
+        if qr_data:
+            st.session_state.wallet_address = qr_data
+            st.success(f"QR Decoded from Camera: {qr_data}")
+
+# 4. Wallet Address Input + Clear
 col_input, col_clear = st.columns([5, 1])
 with col_input:
     address = st.text_input("Wallet Address", key="wallet_address")
 with col_clear:
-    st.write("") # Spacer
-    st.write("") # Spacer
+    st.write("") 
+    st.write("") 
     if st.button("❌", help="Clear Address"):
         clear_text()
         st.experimental_rerun()
@@ -201,4 +215,4 @@ if st.button("🔎 Scan Blockchain", type="primary", use_container_width=True):
                     use_container_width=True
                 )
 
-st.caption("v4.0 | Secure Cloud Forensic Tool")
+st.caption("v4.1 | Secure Cloud Forensic Tool")
