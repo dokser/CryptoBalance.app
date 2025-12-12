@@ -15,17 +15,41 @@ if 'wallet_address' not in st.session_state:
 
 # --- Helper Functions ---
 def clear_text():
-    # This function is called when the X button is clicked
     st.session_state.wallet_address = ""
 
 def decode_qr(image_buffer):
+    """
+    Smarter QR decoder that tries multiple image processings
+    to handle high-res or bad lighting photos.
+    """
     try:
+        # 1. Convert uploaded file to OpenCV Image
         file_bytes = np.asarray(bytearray(image_buffer.read()), dtype=np.uint8)
-        opencv_image = cv2.imdecode(file_bytes, 1)
+        image = cv2.imdecode(file_bytes, 1)
+        
         detector = cv2.QRCodeDetector()
-        data, bbox, _ = detector.detectAndDecode(opencv_image)
-        if data:
-            return data
+
+        # Attempt 1: Standard detection
+        data, _, _ = detector.detectAndDecode(image)
+        if data: return data
+
+        # Attempt 2: Grayscale (Removes color noise)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        data, _, _ = detector.detectAndDecode(gray)
+        if data: return data
+
+        # Attempt 3: High Contrast (Thresholding)
+        _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        data, _, _ = detector.detectAndDecode(thresh)
+        if data: return data
+
+        # Attempt 4: Resize (Fixes issues with huge 10MB+ images)
+        # Scale down by 50%
+        scale = 0.5
+        resized = cv2.resize(gray, None, fx=scale, fy=scale)
+        data, _, _ = detector.detectAndDecode(resized)
+        if data: return data
+
         return None
     except Exception as e:
         return None
@@ -146,12 +170,13 @@ tab1, tab2 = st.tabs(["📤 Upload Image", "🎥 Live Camera"])
 with tab1:
     uploaded_file = st.file_uploader("Upload QR Code Image", type=['png', 'jpg', 'jpeg'])
     if uploaded_file is not None:
+        # Use the new smart decoder
         qr_data = decode_qr(uploaded_file)
         if qr_data:
             st.session_state.wallet_address = qr_data
-            st.success(f"QR Decoded from File: {qr_data}")
+            st.success(f"QR Decoded: {qr_data}")
         else:
-            st.error("Could not read QR code from image.")
+            st.error("Could not read QR. Try cropping the image or better lighting.")
 
 # Option B: Live Camera
 with tab2:
@@ -161,17 +186,15 @@ with tab2:
         qr_data = decode_qr(camera_image)
         if qr_data:
             st.session_state.wallet_address = qr_data
-            st.success(f"QR Decoded from Camera: {qr_data}")
+            st.success(f"QR Decoded: {qr_data}")
 
-# 4. Wallet Address Input + Clear (THE FIX IS HERE)
+# 4. Wallet Address Input + Clear
 col_input, col_clear = st.columns([5, 1])
 with col_input:
-    # Notice we bind the input to 'wallet_address' in session state
     address = st.text_input("Wallet Address", key="wallet_address")
 with col_clear:
     st.write("") 
     st.write("") 
-    # FIX: Using on_click callback instead of imperative logic
     st.button("❌", help="Clear Address", on_click=clear_text)
 
 # 5. Scan Action
@@ -212,4 +235,4 @@ if st.button("🔎 Scan Blockchain", type="primary", use_container_width=True):
                     use_container_width=True
                 )
 
-st.caption("v4.2 | Secure Cloud Forensic Tool")
+st.caption("v4.3 | Secure Cloud Forensic Tool")
